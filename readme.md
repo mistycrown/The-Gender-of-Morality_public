@@ -23,19 +23,4 @@ This repository contains the source code for the paper "The Gender of Morality".
 - Vectors rely on `SIKU-BERT`.
 - LLM annotation relies on DeepSeek API (optional, for reproduction of polysemy filtering).
 
-## Usage
 
-1. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Core Analysis**:
-   The main analysis is performed by calculating the projection of moral concepts onto the gender axis.
-   ```bash
-   python src/analysis/calculate_static_bias.py
-   ```
-
-## Note on Data
-
-The raw corpus (Siku Quanshu & Xueheng Corpus) is not included due to copyright/size constraints. However, the core logic for processing vector embeddings is fully reproducible with any standard corpus format or by using SikuBERT directly.

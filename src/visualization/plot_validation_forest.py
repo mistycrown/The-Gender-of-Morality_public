@@ -9,8 +9,7 @@
 将控制词（Control Terms）在性别轴上的投影偏差（Projection Bias）可视化。
 
 【输入】
-- 优先读取: gender_validity_results.csv (自适应路径检测)
-- 降级回退: 使用内置的硬编码验证数据 (与论文 Table 3/4 一致)
+- 必须提供: gender_validity_results.csv (通过 --input 指定或自适应检测)
 
 【输出】
 - viz/validation_plot.png
@@ -24,6 +23,7 @@ import pandas as pd
 import seaborn as sns
 import os
 import argparse
+import sys
 from pathlib import Path
 
 # 导入统一配置
@@ -101,100 +101,52 @@ SEMANTIC_GENDER = {
 # Desired Order of Categories
 CAT_ORDER = ["Spouse", "Kinship", "Basic", "Biology", "Philosophy"]
 
-# ================= Fallback Data =================
-FALLBACK_DATA = [
-    # Category, Term, Character, Meaning, Bias
-    ("Spouse", "Lang", "郎", "Gentleman/Husband", -0.072),
-    ("Spouse", "Niang", "娘", "Lady/Wife", -0.353),
-    ("Kinship", "Shu", "叔", "Paternal Uncle", 0.163),
-    ("Kinship", "Gu", "姑", "Paternal Aunt", -0.239),
-    ("Kinship", "Jiu", "舅", "Maternal Uncle", -0.109),
-    ("Kinship", "Yi", "姨", "Maternal Aunt", -0.289),
-    ("Basic", "Gong", "公", "Lord/Public", 0.136),
-    ("Basic", "Po", "婆", "Crone/Female", -0.023),
-    ("Basic", "Weng", "翁", "Elderly Man", 0.010),
-    ("Basic", "Ao", "媪", "Elderly Woman", -0.234),
-    ("Biology", "Xiong", "雄", "Male (Animal)", 0.185),
-    ("Biology", "Ci", "雌", "Female (Animal)", -0.160),
-    ("Biology", "Mu", "牡", "Male (Animal)", 0.173),
-    ("Biology", "Pin", "牝", "Female (Animal)", 0.014),
-    ("Philosophy", "Qian", "乾", "Heaven/Male", 0.116),
-    ("Philosophy", "Kun", "坤", "Earth/Female", -0.045),
-    ("Philosophy", "Yang", "阳", "Yang", 0.065),
-    ("Philosophy", "Yin", "阴", "Yin", -0.095),
-]
-
-FALLBACK_STATS = {
-    "Spouse":     (0.212, 0.001, "**"),
-    "Kinship":    (0.200, 0.001, "**"),
-    "Basic":      (0.101, 0.033, "*"),
-    "Biology":    (0.133, 0.002, "**"),
-    "Philosophy": (0.081, 0.109, ""),
-}
-
 def load_data(csv_path):
-    if csv_path and os.path.exists(csv_path):
-        print(f"Loading data from CSV: {csv_path}")
-        try:
-            raw_df = pd.read_csv(csv_path)
-            
-            # Process Word Data
-            word_rows = raw_df[raw_df['Type'] == 'Word'].copy()
-            plot_data = []
-            
-            for _, row in word_rows.iterrows():
-                char = row['Name']
-                cn_cat = row['Category']
-                bias = row['Obs_Score']
-                
-                if char not in WORD_META:
-                    # Skip unknown
-                    continue
-                    
-                term, meaning = WORD_META[char]
-                en_cat = CAT_TRANSLATION.get(cn_cat, cn_cat)
-                gender = SEMANTIC_GENDER.get(char, "Unknown")
-                
-                plot_data.append({
-                    "Category": en_cat,
-                    "Term": term,
-                    "Cha": char,
-                    "Meaning": meaning,
-                    "Bias": bias,
-                    "Gender": gender
-                })
-            
-            df = pd.DataFrame(plot_data)
-            
-            # Process Category Stats
-            cat_rows = raw_df[raw_df['Type'] == 'Category'].copy()
-            cat_stats = {}
-            for _, row in cat_rows.iterrows():
-                cn_cat = row['Name']
-                en_cat = CAT_TRANSLATION.get(cn_cat, cn_cat)
-                sig = row['Significance'] if not pd.isna(row['Significance']) else ""
-                cat_stats[en_cat] = (row['Mean_Abs_Bias'], row['P_Value'], sig)
-                
-            return df, cat_stats
-        except Exception as e:
-            print(f"Error reading CSV: {e}. Falling back to built-in data.")
-            
-    print("Using built-in fallback data.")
-    # Convert fallback data to DF
+    if not csv_path or not os.path.exists(csv_path):
+        print(f"Error: CSV file not found at {csv_path}")
+        return None, None
+
+    print(f"Loading data from CSV: {csv_path}")
+    raw_df = pd.read_csv(csv_path)
+    
+    # Process Word Data
+    word_rows = raw_df[raw_df['Type'] == 'Word'].copy()
     plot_data = []
-    for row in FALLBACK_DATA:
-        cat, term, char, meaning, bias = row
+    
+    for _, row in word_rows.iterrows():
+        char = row['Name']
+        cn_cat = row['Category']
+        bias = row['Obs_Score']
+        
+        if char not in WORD_META:
+            # Skip unknown
+            continue
+            
+        term, meaning = WORD_META[char]
+        en_cat = CAT_TRANSLATION.get(cn_cat, cn_cat)
         gender = SEMANTIC_GENDER.get(char, "Unknown")
+        
         plot_data.append({
-            "Category": cat,
+            "Category": en_cat,
             "Term": term,
             "Cha": char,
             "Meaning": meaning,
             "Bias": bias,
             "Gender": gender
         })
+    
     df = pd.DataFrame(plot_data)
-    return df, FALLBACK_STATS
+    
+    # Process Category Stats
+    cat_rows = raw_df[raw_df['Type'] == 'Category'].copy()
+    cat_stats = {}
+    for _, row in cat_rows.iterrows():
+        cn_cat = row['Name']
+        en_cat = CAT_TRANSLATION.get(cn_cat, cn_cat)
+        sig = row['Significance'] if not pd.isna(row['Significance']) else ""
+        cat_stats[en_cat] = (row['Mean_Abs_Bias'], row['P_Value'], sig)
+        
+    return df, cat_stats
 
 def main():
     default_csv, default_viz_dir = get_default_paths()
@@ -209,12 +161,16 @@ def main():
     
     setup_fonts_and_style()
     
+    if args.input is None:
+        print("Error: No input file specified and no default file found.")
+        sys.exit(1)
+
     # 1. Load Data
     df, cat_stats = load_data(args.input)
     
-    if df.empty:
-        print("No data available to plot.")
-        return
+    if df is None or df.empty:
+        print("Error: No data loaded. Cannot generate plot.")
+        sys.exit(1)
         
     # 2. Plotting
     fig, ax = plt.subplots(figsize=(10, 8))
@@ -237,7 +193,6 @@ def main():
         if cat in cat_stats:
             stat = cat_stats[cat] # (mean, p, sig)
             p_val = stat[1]
-            # Handle string type p_value from fallback or CSV
             p_val_str = f"{p_val:.3f}" if isinstance(p_val, (int, float)) else str(p_val)
             header_text = f"{cat} (Mean Abs: {stat[0]:.3f}, p={p_val_str}{stat[2]})"
         else:

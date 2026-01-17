@@ -1,3 +1,4 @@
+
 """
 ================================================================================
 历时置换检验显著性可视化 (Diachronic Permutation Test Visualization) - Combined
@@ -9,39 +10,69 @@
 
 【可视化逻辑】
 - 颜色 (Color): 原始偏见得分的中位数 (Median Score) - 来自 JSON
-  - 映射: RdBu_r (Blue=Male, Red=Female)
+  - 映射: RdBu (Blue=Female, Red=Male)
 - 标记 (Annotation): 统计显著性 (P-value) - 来自 CSV
   - * : p < 0.05
   - **: p < 0.01
 
 【输出】
-- result/.../viz/diachronic_significance_heatmap_all.png
-- result/.../viz/diachronic_significance_heatmap_pos.png
-- result/.../viz/diachronic_significance_heatmap_neg.png
-- result/.../viz/diachronic_significance_heatmap_combined.png (Virtue & Vice)
+- viz/diachronic_significance_heatmap_all.png
+- viz/diachronic_significance_heatmap_pos.png
+- viz/diachronic_significance_heatmap_neg.png
+- viz/diachronic_significance_heatmap_combined.png (Virtue & Vice)
 
-【作者】Antigravity
-【创建日期】2026-01-14
-================================================================================
+【作者】Antigravity (Updated for Open Source Release)
+【更新日期】2026-01-17
 """
 
 import os
 import re
 import json
+import textwrap
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import argparse
 from pathlib import Path
 
 # 导入统一配置
-from plot_config import setup_fonts_and_style, save_figure, CATEGORY_MAPPING, CAT_ORDER, DYNASTY_MAPPING_EN, POLARITY_MAPPING_EN, DYNASTY_ORDER
+try:
+    from plot_config import setup_fonts_and_style, save_figure, CATEGORY_MAPPING, CAT_ORDER, DYNASTY_MAPPING_EN, POLARITY_MAPPING_EN, DYNASTY_ORDER
+except ImportError:
+    import sys
+    sys.path.append(str(Path(__file__).parent))
+    from plot_config import setup_fonts_and_style, save_figure, CATEGORY_MAPPING, CAT_ORDER, DYNASTY_MAPPING_EN, POLARITY_MAPPING_EN, DYNASTY_ORDER
 
 # ==================== 配置 ====================
 
-CSV_FILE = r"result\20260112autodl结果\result\diachronic_permutation_test\diachronic_permutation_results.csv"
-JSON_FILE = r"result\20260112autodl结果\result\20251230-moral-mvp-diachronic\moral_bias_mvp_diachronic_full.json"
-VIZ_DIR = r"result\20260112autodl结果\result\diachronic_permutation_test\viz"
+def get_default_paths():
+    """Smartly determine default paths based on script location"""
+    script_dir = Path(__file__).resolve().parent
+    project_root = script_dir.parent.parent 
+    
+    # 1. CSV
+    csv_candidates = [
+        project_root / "result" / "diachronic_permutation_results.csv",
+        project_root / "data" / "diachronic_permutation_results.csv",
+        Path("diachronic_permutation_results.csv")
+    ]
+    default_csv = None
+    for p in csv_candidates:
+        if p.exists(): default_csv = p; break
+        
+    # 2. JSON
+    json_candidates = [
+        project_root / "result" / "moral_bias_mvp_diachronic_full.json",
+        project_root / "data" / "moral_bias_mvp_diachronic_full.json",
+        Path("moral_bias_mvp_diachronic_full.json")
+    ]
+    default_json = None
+    for p in json_candidates:
+        if p.exists(): default_json = p; break
+
+    viz_dir = project_root / "result" / "viz"
+    return default_csv, default_json, viz_dir
 
 # 缩写映射 (CSV -> Full Name)
 ABBREV_MAP = {
@@ -72,10 +103,10 @@ def get_significance_label(p_value):
     if p_value < 0.05: return "*"
     return ""
 
-def load_json_scores():
+def load_json_scores(json_file):
     """加载JSON数据为DataFrame [Category, Polarity, Dynasty, Score]"""
-    print(f"Loading JSON: {JSON_FILE}")
-    with open(JSON_FILE, 'r', encoding='utf-8') as f:
+    print(f"Loading JSON: {json_file}")
+    with open(json_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
         
     flat_data = []
@@ -130,7 +161,7 @@ def prepare_pivot_data(df_merged):
 def draw_heatmap_on_ax(ax, pivot_score, pivot_p, title, font, vmin, vmax, cbar=True, ylabel=True, show_yticks=True):
     """辅助函数：在指定Ax上绘制热力图"""
     
-    sns.heatmap(pivot_score, cmap='RdBu_r', center=0, vmin=vmin, vmax=vmax,
+    sns.heatmap(pivot_score, cmap='RdBu', center=0, vmin=vmin, vmax=vmax,
                      cbar=cbar, cbar_kws={'label': 'Median Bias Score'},
                      annot=False, ax=ax)
     
@@ -147,24 +178,27 @@ def draw_heatmap_on_ax(ax, pivot_score, pivot_p, title, font, vmin, vmax, cbar=T
                 txt = f"{score_val:.3f}\n{sig_str}"
                 ax.text(x + 0.5, y + 0.5, txt, 
                        ha='center', va='center', color=text_color,
-                       fontproperties=font, fontsize=9, fontweight='bold')
+                       fontsize=9, fontweight='bold')
                 
-    ax.set_title(title, fontproperties=font, fontsize=14)
-    ax.set_xlabel('Dynasty', fontproperties=font, fontsize=11)
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel('Dynasty', fontsize=11)
     if ylabel:
-        ax.set_ylabel('Moral Category', fontproperties=font, fontsize=11)
+        ax.set_ylabel('Moral Category', fontsize=11)
     else:
         ax.set_ylabel('')
         
-    # 设置刻度字体
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontproperties=font)
+    # 设置刻度字体 - 横向排列，换行
+    xlabels = [label.get_text().replace(' & ', '\n& ') for label in ax.get_xticklabels()]
+    ax.set_xticklabels(xlabels, rotation=0, ha='center')
     
     if show_yticks:
-        ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontproperties=font)
+        # Wrap Y-axis labels
+        ylabels = [label.get_text().replace(' / ', ' /\n') for label in ax.get_yticklabels()]
+        ax.set_yticklabels(ylabels, rotation=0)
     else:
         ax.set_yticks([])
 
-def plot_single_heatmap(df_merged, subcategory, font):
+def plot_single_heatmap(df_merged, subcategory, font, output_dir):
     """绘制单个热力图 (All, Pos, or Neg)"""
     pivot_score, pivot_p = prepare_pivot_data(df_merged)
     
@@ -180,40 +214,45 @@ def plot_single_heatmap(df_merged, subcategory, font):
     draw_heatmap_on_ax(ax, pivot_score, pivot_p, f'Diachronic Significance: {subcategory}', font, vmin, vmax, cbar=True, ylabel=True, show_yticks=True)
     
     plt.tight_layout()
-    outfile = os.path.join(VIZ_DIR, f"diachronic_significance_heatmap_{subcategory.lower()}.png")
-    save_figure(plt.gcf(), outfile.replace('.png', ''))
+    outfile = output_dir / f"diachronic_significance_heatmap_{subcategory.lower()}.png"
+    save_figure(plt.gcf(), outfile)
     print(f"✓ Saved: {outfile}")
     plt.close()
 
-def plot_combined_pos_neg_heatmap(df_pos, df_neg, font):
+def plot_combined_pos_neg_heatmap(df_pos, df_neg, font, output_dir):
     """绘制 Virtue 和 Vice 的组合热力图 (左右布局)"""
     
     pivot_score_pos, pivot_p_pos = prepare_pivot_data(df_pos)
     pivot_score_neg, pivot_p_neg = prepare_pivot_data(df_neg)
     
-    # --- 关键修改: 统一致类别索引 (Alignment) ---
-    # 获取所有出现的类别 (并集)
+    # 统一致类别索引
     all_cats = list(pivot_score_pos.index.union(pivot_score_neg.index))
     
-    # 按 CAT_ORDER 重新排序
     ordered_cats = []
     for c in CAT_ORDER:
         disp = CATEGORY_MAPPING.get(c, c)
         if disp in all_cats:
             ordered_cats.append(disp)
-    # 添加剩余可能的类别
     for c in all_cats:
         if c not in ordered_cats:
             ordered_cats.append(c)
             
-    # Reindex 两张表，确保行完全一致
     pivot_score_pos = pivot_score_pos.reindex(ordered_cats)
     pivot_p_pos = pivot_p_pos.reindex(ordered_cats)
     pivot_score_neg = pivot_score_neg.reindex(ordered_cats)
     pivot_p_neg = pivot_p_neg.reindex(ordered_cats)
+
+    # 统一列索引
+    all_cols = list(pivot_score_pos.columns.union(pivot_score_neg.columns))
+    dynasty_order_en = [DYNASTY_MAPPING_EN.get(d, d) for d in DYNASTY_ORDER]
+    ordered_cols = [c for c in dynasty_order_en if c in all_cols]
+
+    pivot_score_pos = pivot_score_pos.reindex(columns=ordered_cols)
+    pivot_p_pos = pivot_p_pos.reindex(columns=ordered_cols)
+    pivot_score_neg = pivot_score_neg.reindex(columns=ordered_cols)
+    pivot_p_neg = pivot_p_neg.reindex(columns=ordered_cols)
     
     # Determine common color scale
-    # Filter nan before min/max
     vals_pos = pivot_score_pos.values.flatten()
     vals_neg = pivot_score_neg.values.flatten()
     all_vals = np.concatenate([vals_pos[~np.isnan(vals_pos)], vals_neg[~np.isnan(vals_neg)]])
@@ -227,33 +266,89 @@ def plot_combined_pos_neg_heatmap(df_pos, df_neg, font):
     elif abs_max < 0.5: vmax, vmin = 0.3, -0.3
     else: vmax, vmin = 0.5, -0.5
     
-    # Create Figure
-    # sharey=False (防止 matplotlib 自动隐藏ticks), 通过手动对齐 Index 保证视觉对齐
-    fig, axes = plt.subplots(1, 2, figsize=(20, 8), sharey=False, gridspec_kw={'wspace': 0.05})
+    # Create Figure with GridSpec
+    fig = plt.figure(figsize=(20, 8))
+    gs = fig.add_gridspec(1, 3, width_ratios=[10, 10, 0.4], wspace=0.1)
     
+    ax1 = fig.add_subplot(gs[0])
+    ax2 = fig.add_subplot(gs[1])
+    cbar_ax = fig.add_subplot(gs[2])
+
     # Plot (A) Virtue
-    draw_heatmap_on_ax(axes[0], pivot_score_pos, pivot_p_pos, '(A) Virtue (Pos)', font, vmin, vmax, cbar=False, ylabel=True, show_yticks=True)
+    sns.heatmap(pivot_score_pos, cmap='RdBu', center=0, vmin=vmin, vmax=vmax,
+                 cbar=False, annot=False, ax=ax1)
     
     # Plot (B) Vice
-    draw_heatmap_on_ax(axes[1], pivot_score_neg, pivot_p_neg, '(B) Vice (Neg)', font, vmin, vmax, cbar=True, ylabel=False, show_yticks=False)
+    sns.heatmap(pivot_score_neg, cmap='RdBu', center=0, vmin=vmin, vmax=vmax,
+                 cbar=True, cbar_ax=cbar_ax, cbar_kws={'label': 'Median Bias Score'},
+                 annot=False, ax=ax2)
     
-    plt.tight_layout()
-    outfile = os.path.join(VIZ_DIR, "diachronic_significance_heatmap_combined.png")
-    save_figure(fig, outfile.replace('.png', ''))
+    # Manually Annotation reusing logic
+    def annotate_ax(ax, data_score, data_p):
+        for y in range(data_score.shape[0]):
+            for x in range(data_score.shape[1]):
+                score_val = data_score.iloc[y, x]
+                p_val = data_p.iloc[y, x]
+                
+                sig_str = get_significance_label(p_val)
+                text_color = 'white' if abs(score_val) > vmax * 0.5 else 'black'
+                
+                if not pd.isna(score_val):
+                    txt = f"{score_val:.3f}\n{sig_str}"
+                    ax.text(x + 0.5, y + 0.5, txt, 
+                           ha='center', va='center', color=text_color,
+                           fontsize=9, fontweight='bold')
+    
+    annotate_ax(ax1, pivot_score_pos, pivot_p_pos)
+    annotate_ax(ax2, pivot_score_neg, pivot_p_neg)
+
+    # Decoration Ax1
+    ax1.set_title('(A) Virtue (Pos)', fontsize=14)
+    ax1.set_xlabel('Dynasty', fontsize=11)
+    ax1.set_ylabel('Moral Category', fontsize=11)
+    xlabels1 = [label.get_text().replace(' & ', '\n& ') for label in ax1.get_xticklabels()]
+    ax1.set_xticklabels(xlabels1, rotation=0, ha='center')
+    ylabels1 = [label.get_text().replace(' / ', ' /\n') for label in ax1.get_yticklabels()]
+    ax1.set_yticklabels(ylabels1, rotation=0)
+
+    # Decoration Ax2
+    ax2.set_title('(B) Vice (Neg)', fontsize=14)
+    ax2.set_xlabel('Dynasty', fontsize=11)
+    ax2.set_ylabel('', fontsize=11)
+    xlabels2 = [label.get_text().replace(' & ', '\n& ') for label in ax2.get_xticklabels()]
+    ax2.set_xticklabels(xlabels2, rotation=0, ha='center')
+    ax2.set_yticks([]) 
+
+    cbar_ax.tick_params(labelsize=10)
+    
+    outfile = output_dir / "diachronic_significance_heatmap_combined.png"
+    save_figure(fig, outfile)
     print(f"✓ Saved Combined: {outfile}")
     plt.close()
 
 def main():
-    if not os.path.exists(CSV_FILE) or not os.path.exists(JSON_FILE):
-        print("Input files not found.")
+    default_csv, default_json, default_viz_dir = get_default_paths()
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--csv', default=str(default_csv) if default_csv else None, help='Path to diachronic_permutation_results.csv')
+    parser.add_argument('--json', default=str(default_json) if default_json else None, help='Path to moral_bias_mvp_diachronic_full.json')
+    parser.add_argument('--output-dir', default=str(default_viz_dir))
+    args = parser.parse_args()
+    
+    if not args.csv or not os.path.exists(args.csv):
+        print("Error: CSV file not found (specify --csv)")
+        return
+    if not args.json or not os.path.exists(args.json):
+        print("Error: JSON file not found (specify --json)")
         return
         
-    os.makedirs(VIZ_DIR, exist_ok=True)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     font = setup_fonts_and_style()
     
     # 1. Load Data
-    df_json = load_json_scores() 
-    df_csv = pd.read_csv(CSV_FILE) 
+    df_json = load_json_scores(args.json) 
+    df_csv = pd.read_csv(args.csv) 
     
     # 2. Clean CSV
     df_csv['Category'] = df_csv['Category'].apply(clean_category_name_csv)
@@ -264,22 +359,22 @@ def main():
     scores_all = df_json.groupby(['Category', 'Dynasty'])['Score'].median().reset_index()
     p_all = df_csv[df_csv['Subcategory'] == 'All'][['Category', 'Dynasty', 'P_value']]
     merged_all = pd.merge(scores_all, p_all, on=['Category', 'Dynasty'], how='left')
-    plot_single_heatmap(merged_all, 'All', font)
+    plot_single_heatmap(merged_all, 'All', font, output_dir)
     
     # --- Pos ---
     scores_pos = df_json[df_json['Polarity'] == 'pos'].groupby(['Category', 'Dynasty'])['Score'].median().reset_index()
     p_pos = df_csv[df_csv['Subcategory'] == 'Pos'][['Category', 'Dynasty', 'P_value']]
     merged_pos = pd.merge(scores_pos, p_pos, on=['Category', 'Dynasty'], how='left')
-    plot_single_heatmap(merged_pos, 'Pos (Virtue)', font)
+    plot_single_heatmap(merged_pos, 'Pos (Virtue)', font, output_dir)
     
     # --- Neg ---
     scores_neg = df_json[df_json['Polarity'] == 'neg'].groupby(['Category', 'Dynasty'])['Score'].median().reset_index()
     p_neg = df_csv[df_csv['Subcategory'] == 'Neg'][['Category', 'Dynasty', 'P_value']]
     merged_neg = pd.merge(scores_neg, p_neg, on=['Category', 'Dynasty'], how='left')
-    plot_single_heatmap(merged_neg, 'Neg (Vice)', font)
+    plot_single_heatmap(merged_neg, 'Neg (Vice)', font, output_dir)
     
     # --- Combined ---
-    plot_combined_pos_neg_heatmap(merged_pos, merged_neg, font)
+    plot_combined_pos_neg_heatmap(merged_pos, merged_neg, font, output_dir)
 
 if __name__ == "__main__":
     main()

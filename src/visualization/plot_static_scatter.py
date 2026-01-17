@@ -9,19 +9,16 @@
 - X轴：性别投影得分 (Gender Projection Score)
 - Y轴：道德类别 (Category)
 - 颜色 (Color)：道德极性 (Polarity: Virtue vs Vice)
-- 标注 (Label)：自动标注每个类别中得分最高和最低的典型词汇
-
-这使得用户可以直接看到具体的词分布在性别轴的什么位置。
+- 标注 (Label)：自动标注典型词汇
 
 【输入】
-- result/20260112autodl结果/result/20251230-moral-mvp-static/moral_bias_mvp_static_full.json
+- moral_bias_mvp_static_full.json
 
 【输出】
-- result/20260112autodl结果/result/20251230-moral-mvp-static/viz/moral_static_full_word_scatter.png
+- viz/moral_static_full_word_scatter.png
 
-【作者】Antigravity
-【创建日期】2026-01-12
-================================================================================
+【作者】Antigravity (Updated for Open Source Release)
+【更新日期】2026-01-17
 """
 
 import os
@@ -31,19 +28,38 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import seaborn as sns
+import argparse
+from pathlib import Path
 
 # 导入统一配置
-from plot_config import setup_fonts_and_style, save_figure, CATEGORY_MAPPING, CAT_ORDER, POLARITY_MAPPING_EN
+try:
+    from plot_config import setup_fonts_and_style, save_figure, CATEGORY_MAPPING, CAT_ORDER, POLARITY_MAPPING_EN
+except ImportError:
+    import sys
+    sys.path.append(str(Path(__file__).parent))
+    from plot_config import setup_fonts_and_style, save_figure, CATEGORY_MAPPING, CAT_ORDER, POLARITY_MAPPING_EN
 
 # ==================== 配置 ====================
 
-JSON_FILE = r"result\20260112autodl结果\result\20251230-moral-mvp-static\moral_bias_mvp_static_full.json"
-VIZ_DIR = r"result\20260112autodl结果\result\20251230-moral-mvp-static\viz"
-FONT_PATH = r'C:\Windows\Fonts\simkai.ttf'
-
-
-
-
+def get_default_paths():
+    """Smartly determine default paths based on script location"""
+    script_dir = Path(__file__).resolve().parent
+    project_root = script_dir.parent.parent 
+    
+    candidates = [
+        project_root / "result" / "moral_bias_mvp_static_full.json",
+        project_root / "data" / "moral_bias_mvp_static_full.json",
+        Path("moral_bias_mvp_static_full.json")
+    ]
+    
+    default_json = None
+    for p in candidates:
+        if p.exists():
+            default_json = p
+            break
+            
+    viz_dir = project_root / "result" / "viz"
+    return default_json, viz_dir
 
 POLARITY_MAP = {
     "pos": "Virtue (美德)",
@@ -57,25 +73,33 @@ def setup_font():
     return setup_fonts_and_style()
 
 def main():
-    if not os.path.exists(JSON_FILE):
-        print(f"找不到文件: {JSON_FILE}")
+    default_json, default_viz_dir = get_default_paths()
+    
+    parser = argparse.ArgumentParser(description="Visualize Static Moral Bias Scatter")
+    parser.add_argument('--input', type=str, default=str(default_json) if default_json else None, 
+                        help='Input JSON file path')
+    parser.add_argument('--output-dir', type=str, default=str(default_viz_dir), 
+                        help='Output directory for visualizations')
+    
+    args = parser.parse_args()
+    
+    if not args.input or not os.path.exists(args.input):
+        print(f"Error: Single JSON file not found at {args.input}")
         return
         
-    os.makedirs(VIZ_DIR, exist_ok=True)
+    viz_dir = Path(args.output_dir)
+    viz_dir.mkdir(parents=True, exist_ok=True)
+    
     font = setup_font()
     
     # 1. 加载数据
-    with open(JSON_FILE, 'r', encoding='utf-8') as f:
+    with open(args.input, 'r', encoding='utf-8') as f:
         data = json.load(f)
         
     df = pd.DataFrame(data)
     df['Polarity Label'] = df['polarity'].map(POLARITY_MAP)
     
-    print("正在标注所有词汇...")
-    # 为了避免文字完全重叠，我们可以给 y_center 加一个随机微小抖动，或者按原有jitter逻辑
-    # stripplot 的 jitter 是随机的，我们无法确切知道点画在哪。
-    # 既然用户想要看清"每个字"，不如我们放弃 stripplot 的随机 jitter，手动控制 y 轴位置。
-    # 方法：在每个 category 内部，根据 score 排序，然后交替给 y 轴加 offset
+    print("Plotting word scatter plot...")
     
     # 我们可以重新绘图：不使用 stripplot，而是直接用 scatter，自己控制 y
     plt.figure(figsize=(20, 15)) # 加大画布
@@ -86,21 +110,18 @@ def main():
     plot_colors = []
     plot_labels = []
     
-    # 颜色映射
-    color_map = {"pos": "#1f77b4", "neg": "#d62728"} # Blue vs Red
+    # 颜色映射 (Green / Orange)
+    color_map = {"pos": "#2ca02c", "neg": "#ff7f0e"} 
     
     # 过滤掉没有数据的类别
-    present_categories = [cat for cat in CAT_ORDER if cat in df['category'].unique()]
+    valid_cats = [cat for cat in CAT_ORDER if cat in df['category'].unique()]
     
-    for cat_i, cat in enumerate(present_categories):
+    for cat_i, cat in enumerate(valid_cats):
         cat_df = df[df['category'] == cat].sort_values('score')
         if len(cat_df) == 0:
             continue
             
         # 简单算法：为了防止字重叠，我们在 y 轴方向做“扇形”展开或者上下交替
-        # 或者仅仅是交替上下：0, +0.1, -0.1, +0.2, -0.2 ...
-        # 这样同一直线（同类）上的字能错开
-        
         offsets = [0, 0.15, -0.15, 0.3, -0.3, 0.45, -0.45, 0.6, -0.6]
         
         for i, (idx, row) in enumerate(cat_df.iterrows()):
@@ -119,34 +140,35 @@ def main():
             # 绘制文字
             # 在点旁边
             plt.text(row['score'], real_y + 0.08, row['word'], 
-                     fontproperties=font, fontsize=9, 
+                     fontsize=15, 
                      color='black', alpha=0.9,
                      ha='center', va='bottom')
 
     plt.axvline(0, color='black', linestyle='-', linewidth=1, alpha=0.3)
-    plt.title('Static Gender Bias Scatter (Full)', fontproperties=font, fontsize=24)
-    plt.xlabel('← Female      Gender Projection Score      Male →', fontproperties=font, fontsize=16)
-    plt.ylabel('Moral Category', fontproperties=font, fontsize=16)
+    plt.title('Static Gender Bias Scatter (Full)', fontsize=24)
+    plt.xlabel('← Female      Gender Projection Score      Male →', fontsize=16)
+    plt.ylabel('Moral Category', fontsize=16)
     
     # 设置Y轴 - 使用英文维度名称 (仅展示由数据类别)
-    ytick_labels = [CATEGORY_MAPPING.get(c, c) for c in present_categories]
-    plt.yticks(range(len(present_categories)), ytick_labels, fontsize=10)
-    plt.ylim(-1, len(present_categories))
+    # 将长标签分成两行以提高可读性
+    ytick_labels = [CATEGORY_MAPPING.get(c, c).replace(' / ', ' /\n') for c in valid_cats]
+    plt.yticks(range(len(valid_cats)), ytick_labels, fontsize=14)
+    plt.ylim(-1, len(valid_cats))
     
     # 手动添加图例
     from matplotlib.lines import Line2D
     legend_elements = [Line2D([0], [0], marker='o', color='w', label='Virtue',
-                              markerfacecolor='#1f77b4', markersize=10),
+                              markerfacecolor='#2ca02c', markersize=10),
                        Line2D([0], [0], marker='o', color='w', label='Vice',
-                              markerfacecolor='#d62728', markersize=10)]
-    plt.legend(handles=legend_elements, prop=font, title='Polarity', loc='upper left')
+                              markerfacecolor='#ff7f0e', markersize=10)]
+    plt.legend(handles=legend_elements, title='Polarity', loc='upper left')
 
     plt.grid(True, axis='x', alpha=0.3)
     
     plt.tight_layout()
-    base_path = os.path.join(VIZ_DIR, "moral_static_full_word_scatter")
-    save_figure(plt.gcf(), base_path)
-    print(f"\n散点图已保存: {base_path}.* (svg/pdf/png)")
+    save_path = viz_dir / "moral_static_full_word_scatter.png"
+    save_figure(plt.gcf(), save_path)
+    print(f"\nScatter plot saved: {save_path}")
     plt.close()
 
 if __name__ == "__main__":

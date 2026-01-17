@@ -5,8 +5,8 @@
 
 【功能描述】
 提供统一的绘图配置,包括:
-1. SciencePlots样式设置
-2. 字体配置(中文宋体、英文Times New Roman)
+1. 基础样式设置 (SciencePlots 可选)
+2. 字体配置(中文宋体/黑体、英文Times New Roman/Arial)
 3. 道德类别映射(英文维度名称)
 4. 图表尺寸和输出格式
 
@@ -18,6 +18,7 @@
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from pathlib import Path
+import platform
 
 # ==================== 类别映射 ====================
 # 基于用户提供的Dimension列
@@ -47,117 +48,14 @@ CAT_ORDER = [
     "Diligence", "Modesty", "Valor", "Waste"
 ]
 
-# ==================== 图表尺寸配置 ====================
-# 根据用户要求: 半版8cm, 2/3版14cm, 整版17cm
-
-FIGURE_SIZES = {
-    'half': (3.15, 2.36),      # ~8cm width (1:0.75 ratio)
-    'two_thirds': (5.51, 4.13), # ~14cm width
-    'full': (6.69, 5.02),      # ~17cm width
-    'custom': None             # 自定义尺寸
-}
-
-# ==================== 字体配置 ====================
-
-def setup_fonts_and_style():
-    """
-    设置绘图字体和样式
-    
-    使用SciencePlots库 + 自定义字体:
-    - 中文: 宋体 (SimSun)
-    - 英文: Times New Roman
-    - 字号: 7-12pt范围
-    """
-    try:
-        # 导入并应用SciencePlots样式
-        import scienceplots
-        plt.style.use(['science', 'no-latex'])
-        print("✓ 已应用SciencePlots样式")
-    except ImportError:
-        print("⚠️  SciencePlots未安装,使用默认样式")
-        print("   安装方法: pip install SciencePlots")
-    
-    # 设置字体
-    # Times New Roman for English
-    plt.rcParams['font.family'] = 'serif'
-    plt.rcParams['font.serif'] = ['Times New Roman', 'SimSun']
-    
-    # SimSun (宋体) for Chinese
-    # 尝试加载系统中的宋体
-    FONT_CANDIDATES = [
-        r'C:\Windows\Fonts\simsun.ttc',
-        r'C:\Windows\Fonts\SimSun.ttf',
-        '/System/Library/Fonts/STSong.ttf',  # macOS
-    ]
-    
-    chinese_font = None
-    for font_path in FONT_CANDIDATES:
-        if Path(font_path).exists():
-            try:
-                chinese_font = mpl.font_manager.FontProperties(fname=font_path)
-                # 将中文字体添加到sans-serif列表
-                plt.rcParams['font.sans-serif'] = [chinese_font.get_name()] + plt.rcParams['font.sans-serif']
-                print(f"✓ 已加载中文字体: {font_path}")
-                break
-            except Exception as e:
-                print(f"⚠️  加载字体失败 {font_path}: {e}")
-    
-    if chinese_font is None:
-        # 回退到系统字体
-        plt.rcParams['font.sans-serif'] = ['SimSun', 'SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
-        print("⚠️  使用系统默认中文字体")
-    
-    plt.rcParams['axes.unicode_minus'] = False
-    
-    # 字号设置 (7-12pt范围)
-    plt.rcParams['font.size'] = 9
-    plt.rcParams['axes.titlesize'] = 11
-    plt.rcParams['axes.labelsize'] = 10
-    plt.rcParams['xtick.labelsize'] = 8
-    plt.rcParams['ytick.labelsize'] = 8
-    plt.rcParams['legend.fontsize'] = 8
-    
-    # 坐标轴样式 (黑色, 0.5-1.5pt)
-    plt.rcParams['axes.edgecolor'] = 'black'
-    plt.rcParams['axes.linewidth'] = 0.8
-    plt.rcParams['xtick.major.width'] = 0.8
-    plt.rcParams['ytick.major.width'] = 0.8
-    
-    return chinese_font
-
-# ==================== 输出格式配置 ====================
-
-def save_figure(fig, base_path, formats=['svg', 'pdf', 'png'], dpi=600):
-    """
-    保存图表为多种格式
-    
-    Args:
-        fig: matplotlib图表对象
-        base_path: 基础路径(不含扩展名)
-        formats: 输出格式列表
-        dpi: PNG分辨率
-    """
-    base_path = Path(base_path)
-    base_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    for fmt in formats:
-        output_path = base_path.with_suffix(f'.{fmt}')
-        if fmt == 'png':
-            fig.savefig(output_path, dpi=dpi, bbox_inches='tight')
-        elif fmt == 'pdf':
-            fig.savefig(output_path, format='pdf', bbox_inches='tight')
-        elif fmt == 'svg':
-            fig.savefig(output_path, format='svg', bbox_inches='tight')
-        print(f"  ✓ 已保存: {output_path}")
-
 # ==================== 翻译映射 ====================
 
 # 朝代英文映射
 DYNASTY_MAPPING_EN = {
     '先秦两汉': 'Pre-Qin & Han',
-    '魏晋南北朝': 'Wei, Jin, N&S',
+    '魏晋南北朝': 'Wei-Jin & N./S. Dynasties',
     '隋唐': 'Sui & Tang',
-    '宋': 'Song',
+    '宋': 'Five Dynasties & Song',
     '元': 'Yuan',
     '明': 'Ming',
     '清': 'Qing'
@@ -178,6 +76,83 @@ VALIDATION_CATEGORY_MAPPING = {
     '社会角色': 'Social Roles',
     '生物性别': 'Biological Sex'
 }
+
+# ==================== 图表尺寸配置 ====================
+# 根据用户要求: 半版8cm, 2/3版14cm, 整版17cm
+
+FIGURE_SIZES = {
+    'half': (3.15, 2.36),      # ~8cm width (1:0.75 ratio)
+    'two_thirds': (5.51, 4.13), # ~14cm width
+    'full': (6.69, 5.02),      # ~17cm width
+    'custom': None             # 自定义尺寸
+}
+
+# ==================== 字体配置 ====================
+
+def setup_fonts_and_style():
+    """
+    设置绘图字体和样式
+    
+    配置策略:
+    - 优先使用 Arial Unicode MS / SimHei 等常见中文字体
+    - 英文字体优先使用 Times New Roman / Arial
+    """
+    
+    # Configure font for Chinese characters (Sans-Serif fallback chain)
+    # 包含了 Windows, macOS, Linux 常用中文字体
+    fonts = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'WenQuanYi Micro Hei', 'sans-serif']
+    
+    # 尝试检测系统字体
+    if platform.system() == 'Windows':
+        fonts = ['SimHei', 'Microsoft YaHei'] + fonts
+    elif platform.system() == 'Darwin': # macOS
+        fonts = ['Arial Unicode MS', 'PingFang SC'] + fonts
+        
+    plt.rcParams['font.sans-serif'] = fonts
+    plt.rcParams['axes.unicode_minus'] = False
+    
+    # 全局字号设置
+    plt.rcParams['font.size'] = 11
+    plt.rcParams['axes.titlesize'] = 14
+    plt.rcParams['axes.labelsize'] = 12
+    plt.rcParams['xtick.labelsize'] = 10
+    plt.rcParams['ytick.labelsize'] = 10
+    plt.rcParams['legend.fontsize'] = 10
+    
+    return None
+
+# ==================== 输出格式配置 ====================
+
+def save_figure(fig, base_path, formats=['svg', 'pdf', 'png'], dpi=600):
+    """
+    保存图表为多种格式
+    
+    Args:
+        fig: matplotlib图表对象
+        base_path: 基础路径(含文件名，不含扩展名)
+        formats: 输出格式列表
+        dpi: PNG分辨率
+    """
+    base_path = Path(base_path)
+    base_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    for fmt in formats:
+        # 如果 base_path 已经是完整路径且包含后缀，则需要处理
+        # 这里假设传入的是无后缀的路径或者我们需要替换后缀
+        # 为安全起见，先去掉可能的后缀再添加新后缀
+        # 但 Path.with_suffix 会替换最后一个后缀
+        output_path = base_path.with_suffix(f'.{fmt}')
+        
+        try:
+            if fmt == 'png':
+                fig.savefig(output_path, dpi=dpi, bbox_inches='tight')
+            elif fmt == 'pdf':
+                fig.savefig(output_path, format='pdf', bbox_inches='tight')
+            elif fmt == 'svg':
+                fig.savefig(output_path, format='svg', bbox_inches='tight')
+            print(f"  ✓ Saved: {output_path}")
+        except Exception as e:
+            print(f"  Warning: Failed to save as {fmt}: {e}")
 
 # ==================== 辅助函数 ====================
 
